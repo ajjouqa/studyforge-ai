@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getAI } from "./client";
 import { env } from "../env";
 import { chunkText } from "../chunk/chunk";
+import { getLanguage, languageDirective } from "../settings";
 import { CARDS_SYSTEM, cardsUser } from "./prompts";
 
 export const CardSchema = z.object({
@@ -66,6 +67,7 @@ export async function generateFlashcards(input: {
   const ai = getAI();
   const model = env.cardsModel;
   const count = input.count ?? 12;
+  const dir = languageDirective(await getLanguage());
   const chunks = chunkText(input.text);
   const perChunk = Math.max(3, Math.ceil(count / chunks.length));
 
@@ -75,7 +77,7 @@ export async function generateFlashcards(input: {
       model,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: CARDS_SYSTEM },
+        { role: "system", content: CARDS_SYSTEM + dir },
         { role: "user", content: cardsUser(input.title, ch.text, perChunk) },
       ],
     });

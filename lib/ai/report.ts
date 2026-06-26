@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getAI } from "./client";
 import { env } from "../env";
 import { getAnalytics } from "../analytics";
+import { getLanguage, languageDirective } from "../settings";
 
 const ReportSchema = z.object({
   readiness: z.number().int().min(0).max(100).catch(50),
@@ -14,6 +15,7 @@ export async function generateWeeklyReport(): Promise<{
 }> {
   const a = await getAnalytics();
   const ai = getAI();
+  const dir = languageDirective(await getLanguage());
 
   const res = await ai.chat.completions.create({
     model: env.summaryModel,
@@ -29,7 +31,7 @@ The report MUST cover, in Markdown sections:
 - **Weak areas** to focus on
 - **Recommendations** for next week (concrete, actionable)
 - **Estimated exam readiness** with a one-line justification
-Reference the actual numbers. Be specific and concise.`,
+Reference the actual numbers. Be specific and concise.${dir}`,
       },
       { role: "user", content: JSON.stringify(a) },
     ],

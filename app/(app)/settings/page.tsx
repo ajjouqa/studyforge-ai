@@ -1,17 +1,61 @@
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, Languages, XCircle } from "lucide-react";
 import { aiConfigured, env } from "@/lib/env";
 import { authEnabled } from "@/lib/auth";
+import { getLanguage } from "@/lib/settings";
 import { Card, PageHeader } from "@/components/ui";
+import { SubmitButton } from "@/components/submit-button";
+import { setLanguage } from "@/app/actions/settings";
 
-export default function SettingsPage() {
+export const dynamic = "force-dynamic";
+
+const LANGUAGES = [
+  "English",
+  "Deutsch",
+  "Français",
+  "Español",
+  "Italiano",
+  "Nederlands",
+  "Português",
+  "العربية",
+  "Türkçe",
+];
+
+export default async function SettingsPage() {
   const ai = aiConfigured();
+  const language = await getLanguage();
   return (
     <div>
       <PageHeader
         title="Settings"
-        description="Configuration is read from your .env.local file."
+        description="Most configuration is read from your .env.local file."
       />
       <div className="space-y-4">
+        <Card className="p-5">
+          <h2 className="mb-3 flex items-center gap-2 font-medium">
+            <Languages size={16} /> AI response language
+          </h2>
+          <p className="mb-3 text-sm text-muted">
+            Summaries, flashcards, chat, tutor, quizzes, plans, reports and mind
+            maps will be generated in this language.
+          </p>
+          <form action={setLanguage} className="flex flex-wrap items-end gap-2">
+            <select
+              name="language"
+              defaultValue={language}
+              className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <SubmitButton pendingText="Saving…" size="sm">
+              Save language
+            </SubmitButton>
+          </form>
+        </Card>
+
         <Card className="p-5">
           <h2 className="mb-3 font-medium">AI (OpenRouter)</h2>
           <Row label="API key" ok={ai} okText="configured" badText="missing — add OPENROUTER_API_KEY to .env.local" />

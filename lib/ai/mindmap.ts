@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getAI } from "./client";
 import { env } from "../env";
 import { chunkText } from "../chunk/chunk";
+import { getLanguage, languageDirective } from "../settings";
 
 const NodeSchema = z.object({
   id: z.string().min(1).max(60),
@@ -24,6 +25,7 @@ export async function generateMindMap(input: {
   text: string;
 }): Promise<MindMapData> {
   const ai = getAI();
+  const dir = languageDirective(await getLanguage());
   const text = chunkText(input.text)
     .slice(0, 3)
     .map((c) => c.text)
@@ -40,7 +42,7 @@ Return ONLY JSON: {"nodes":[{"id":"c1","label":"Concept","group":"theme"}],"edge
 - 8 to 15 nodes with short ids (c1, c2, …).
 - Edges connect related concepts with a short relationship label.
 - Ground everything in the material; do not invent concepts.
-No markdown, no commentary.`,
+No markdown, no commentary.${dir}`,
       },
       { role: "user", content: `Material: "${input.title}"\n\n${text}` },
     ],

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getAI } from "./client";
 import { env } from "../env";
+import { getLanguage, languageDirective } from "../settings";
 
 const TaskSchema = z.object({
   day: z.string(),
@@ -49,6 +50,7 @@ export async function generateStudyPlan(input: {
 
   const ai = getAI();
   const dailyMinutes = Math.round(input.hoursPerDay * 60);
+  const dir = languageDirective(await getLanguage());
 
   const res = await ai.chat.completions.create({
     model: env.openRouterModel,
@@ -64,7 +66,7 @@ Rules:
 - Prioritize WEAK topics: schedule them earlier and revisit them more often.
 - Include "review" and "spaced-repetition" sessions, especially in the last days before the exam.
 - Add a "quiz" session near the end to self-test.
-No markdown, no commentary.`,
+No markdown, no commentary.${dir}`,
       },
       {
         role: "user",

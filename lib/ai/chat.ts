@@ -3,6 +3,7 @@ import { getAI } from "./client";
 import { env } from "../env";
 import { retrieveChunks, sampleChunks } from "../rag/retrieve";
 import { buildContext, type BuiltContext } from "../rag/context";
+import { getLanguage, languageDirective } from "../settings";
 
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -47,8 +48,9 @@ export async function* streamChatAnswer(input: {
   level?: string | null;
 }): AsyncGenerator<string> {
   const ai = getAI();
-  const system =
+  const base =
     input.mode === "tutor" ? tutorSystem(input.level ?? "intermediate") : SYSTEM;
+  const system = base + languageDirective(await getLanguage());
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: system },

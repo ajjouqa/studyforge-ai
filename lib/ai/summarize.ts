@@ -1,6 +1,7 @@
 import { getAI } from "./client";
 import { env } from "../env";
 import { chunkText } from "../chunk/chunk";
+import { getLanguage, languageDirective } from "../settings";
 import { summarySystem, summaryUser, type SummaryLength } from "./prompts";
 
 // Streams a Markdown summary at the chosen length. For long material we first
@@ -13,6 +14,7 @@ export async function* streamSummary(input: {
   const ai = getAI();
   const model = env.summaryModel;
   const length = input.length ?? "standard";
+  const dir = languageDirective(await getLanguage());
   const chunks = chunkText(input.text);
 
   let source = input.text;
@@ -25,7 +27,7 @@ export async function* streamSummary(input: {
       const res = await ai.chat.completions.create({
         model,
         messages: [
-          { role: "system", content: summarySystem("standard") },
+          { role: "system", content: summarySystem("standard") + dir },
           { role: "user", content: summaryUser(input.title, ch.text) },
         ],
       });
@@ -39,7 +41,7 @@ export async function* streamSummary(input: {
     model,
     stream: true,
     messages: [
-      { role: "system", content: summarySystem(length, isReduce) },
+      { role: "system", content: summarySystem(length, isReduce) + dir },
       { role: "user", content: summaryUser(input.title, source) },
     ],
   });

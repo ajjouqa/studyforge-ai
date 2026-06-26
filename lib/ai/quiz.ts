@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getAI } from "./client";
 import { env } from "../env";
 import { chunkText } from "../chunk/chunk";
+import { getLanguage, languageDirective } from "../settings";
 
 export const QUESTION_TYPES = ["mcq", "truefalse", "fillblank", "short"] as const;
 export type QuestionType = (typeof QUESTION_TYPES)[number];
@@ -68,6 +69,7 @@ export async function generateQuiz(input: {
   const ai = getAI();
   const count = input.count ?? 8;
   const types = input.types?.length ? input.types : [...QUESTION_TYPES];
+  const dir = languageDirective(await getLanguage());
   const allChunks = chunkText(input.text);
   // Bound cost for large (course-wide) inputs.
   const chunks = allChunks.slice(0, 4);
@@ -79,7 +81,7 @@ export async function generateQuiz(input: {
       model: env.cardsModel,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: SYSTEM },
+        { role: "system", content: SYSTEM + dir },
         {
           role: "user",
           content: `Create up to ${perChunk} quiz questions (types: ${types.join(
