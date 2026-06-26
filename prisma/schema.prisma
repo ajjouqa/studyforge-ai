@@ -1,0 +1,386 @@
+// StudyForge data model. See plan: AI course learning & management app.
+// Prisma 7 uses the `prisma-client` generator. Output lives outside `app/`
+// so Next.js does not treat the generated files as routes.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------------------
+// Courses & materials
+// ---------------------------------------------------------------------------
+
+model Course {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  materials    Material[]
+  summaries    Summary[]
+  decks        Deck[]
+  chatSessions ChatSession[]
+  quizzes      Quiz[]
+  studyPlans   StudyPlan[]
+  mindMaps     MindMap[]
+}
+
+enum MaterialType {
+  FILE
+  TEXT
+  LINK
+  AUDIO
+}
+
+enum MaterialStatus {
+  PENDING // queued for extraction
+  PROCESSING // extraction/transcription running
+  READY // extractedText is available
+  FAILED
+}
+
+model Material {
+  id       String         @id @default(cuid())
+  course   Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId String
+  type     MaterialType
+  title    String
+  status   MaterialStatus @default(PENDING)
+
+  // source-specific input
+  filePath String? // FILE / AUDIO -> relative path under STORAGE_DIR
+  mimeType String?
+  sourceUrl String? // LINK
+  rawInput String? // TEXT (the pasted text before normalization)
+
+  // extraction results
+  extractedText String?
+  wordCount     Int?
+  error         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chunks     Chunk[]
+  jobs       Job[]
+  summaries  Summary[]
+  flashcards Flashcard[]
+
+  @@index([courseId])
+  @@index([status])
+}
+
+model Chunk {
+  id         String   @id @default(cuid())
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  materialId String
+  index      Int
+  text       String
+  tokenCount Int
+
+  @@index([materialId])
+}
+
+// ---------------------------------------------------------------------------
+// AI summaries
+// ---------------------------------------------------------------------------
+
+enum SummaryStatus {
+  PENDING
+  STREAMING
+  READY
+  FAILED
+}
+
+model Summary {
+  id         String        @id @default(cuid())
+  course     Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId   String
+  material   Material?     @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  materialId String?
+  scope      String        @default("material") // "material" | "course"
+  content    String        @default("") // Markdown, appended while streaming
+  model      String?
+  status     SummaryStatus @default(PENDING)
+  promptTokens     Int?
+  completionTokens Int?
+  error      String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([courseId])
+  @@index([materialId])
+}
+
+// ---------------------------------------------------------------------------
+// Flashcards & spaced repetition (SM-2)
+// ---------------------------------------------------------------------------
+
+model Deck {
+  id         String      @id @default(cuid())
+  course     Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId   String
+  title      String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  flashcards Flashcard[]
+
+  @@index([courseId])
+}
+
+enum CardState {
+  NEW
+  LEARNING
+  REVIEW
+}
+
+model Flashcard {
+  id         String    @id @default(cuid())
+  deck       Deck      @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  deckId     String
+  material   Material? @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  materialId String?
+  question   String
+  answer     String
+  hint       String?
+  source     String    @default("ai") // "ai" | "manual"
+
+  // rich metadata (Feature 8)
+  difficulty      String? // "easy" | "medium" | "hard"
+  tags            String? // JSON array of strings
+  confidence      Int? // 1..5 self-rating
+  sourcePage      Int?
+  sourceParagraph Int?
+  relatedConcepts String? // JSON array of strings
+
+  // SM-2 state
+  easeFactor   Float     @default(2.5)
+  intervalDays Int       @default(0)
+  repetitions  Int       @default(0)
+  dueDate      DateTime  @default(now())
+  lastReviewed DateTime?
+  state        CardState @default(NEW)
+
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  reviews   ReviewLog[]
+
+  @@index([deckId])
+  @@index([dueDate])
+}
+
+model ReviewLog {
+  id           String    @id @default(cuid())
+  flashcard    Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
+  flashcardId  String
+  grade        Int // SM-2 quality 0..5
+  prevInterval Int
+  newInterval  Int
+  prevEase     Float
+  newEase      Float
+  reviewedAt   DateTime  @default(now())
+
+  @@index([flashcardId])
+}
+
+// ---------------------------------------------------------------------------
+// Background jobs (DB-backed queue)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Quizzes
+// ---------------------------------------------------------------------------
+
+model Quiz {
+  id         String         @id @default(cuid())
+  course     Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId   String
+  title      String
+  scope      String         @default("course") // "material" | "course"
+  materialId String?
+  createdAt  DateTime       @default(now())
+  questions  QuizQuestion[]
+  attempts   QuizAttempt[]
+
+  @@index([courseId])
+}
+
+model QuizQuestion {
+  id            String  @id @default(cuid())
+  quiz          Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizId        String
+  order         Int
+  type          String // "mcq" | "truefalse" | "fillblank" | "short"
+  question      String
+  options       String? // JSON array (mcq)
+  correctAnswer String
+  explanation   String?
+  difficulty    String  @default("medium") // "easy" | "medium" | "hard"
+  source        String?
+
+  @@index([quizId])
+}
+
+model QuizAttempt {
+  id        String   @id @default(cuid())
+  quiz      Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizId    String
+  answers   String // JSON { questionId: { answer, correct } }
+  correct   Int
+  total     Int
+  score     Int // percent 0..100
+  createdAt DateTime @default(now())
+
+  @@index([quizId])
+}
+
+// ---------------------------------------------------------------------------
+// AI course chat (RAG)
+// ---------------------------------------------------------------------------
+
+model ChatSession {
+  id        String        @id @default(cuid())
+  course    Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId  String
+  title     String        @default("New chat")
+  mode      String        @default("chat") // "chat" | "tutor" (Feature 9)
+  level     String? // "beginner" | "intermediate" | "advanced" (tutor)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  messages  ChatMessage[]
+
+  @@index([courseId])
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId String
+  role      String // "user" | "assistant"
+  content   String
+  sources   String? // JSON array of { materialId, title } citations
+  createdAt DateTime    @default(now())
+
+  @@index([sessionId])
+}
+
+enum JobType {
+  EXTRACT_FILE
+  TRANSCRIBE_AUDIO
+  IMPORT_LINK
+  GENERATE_FLASHCARDS
+  GENERATE_SUMMARY
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  type        JobType
+  status      JobStatus @default(PENDING)
+  material    Material? @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  materialId  String?
+  payload     String? // JSON string
+  progress    Int       @default(0)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  error       String?
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  @@index([status])
+  @@index([type])
+}
+
+// ---------------------------------------------------------------------------
+// Gamification (Feature 10) — single-user, so stats are a singleton row.
+// ---------------------------------------------------------------------------
+
+model UserStats {
+  id            String   @id @default("singleton")
+  xp            Int      @default(0)
+  streak        Int      @default(0)
+  longestStreak Int      @default(0)
+  lastActiveDay String? // YYYY-MM-DD
+  dailyGoal     Int      @default(20) // cards/day
+  weeklyGoal    Int      @default(150)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Achievement {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  title       String
+  description String
+  earnedAt    DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Study planner (Feature 4)
+// ---------------------------------------------------------------------------
+
+model StudyPlan {
+  id          String      @id @default(cuid())
+  course      Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId    String
+  title       String      @default("Study plan")
+  examDate    DateTime
+  hoursPerDay Float       @default(2)
+  studyDays   String // JSON array of weekday numbers (0=Sun)
+  createdAt   DateTime    @default(now())
+  tasks       StudyTask[]
+
+  @@index([courseId])
+}
+
+model StudyTask {
+  id        String    @id @default(cuid())
+  plan      StudyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId    String
+  day       String // YYYY-MM-DD
+  order     Int
+  title     String
+  kind      String   @default("study") // study | review | quiz | spaced-repetition
+  minutes   Int      @default(30)
+  done      Boolean  @default(false)
+
+  @@index([planId])
+}
+
+// ---------------------------------------------------------------------------
+// Mind maps (Feature 7)
+// ---------------------------------------------------------------------------
+
+model MindMap {
+  id        String   @id @default(cuid())
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId  String
+  title     String
+  data      String // JSON { nodes:[{id,label,group?}], edges:[{from,to,label?}] }
+  createdAt DateTime @default(now())
+
+  @@index([courseId])
+}
+
+// ---------------------------------------------------------------------------
+// Weekly AI report (Feature 6) — single-user, cross-course.
+// ---------------------------------------------------------------------------
+
+model WeeklyReport {
+  id        String   @id @default(cuid())
+  content   String // Markdown
+  readiness Int? // 0..100 estimated exam readiness
+  createdAt DateTime @default(now())
+}
